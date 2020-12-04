@@ -1,0 +1,187 @@
+
+import matplotlib.pyplot as plt
+import numpy as np
+import math
+from pprint import pprint
+
+w = 78970.5                             #weight/length (Newtons/meter) steel
+L = 1                                   #meters
+EI1 = 5000                              #horizontal tension in Newtons
+n = 6                                 #nxn matrix
+dx = float(L)/(n-1)
+dx2 = dx * dx
+wei = w / EI1
+repetition = 1
+last = n - 1
+
+
+def distributed_loading(x):
+    return -1 * (w + x * 0)
+
+
+def ei_f(x):
+    return EI1 + x * 0
+
+
+def matrix_vector(x, v):
+    ret = [[0]*n for x in range(len(x))]
+    for i in range(len(x)):
+        ret[i] = x[i]*v[i]
+    return ret
+
+
+def tri_solver(x, d):
+    N = np.size(x, 0)
+    Y = np.transpose(np.empty(N))
+    A = np.diagonal(x, -1).copy()
+    B = np.diagonal(x).copy()
+    C = np.diagonal(x, 1).copy()
+    F = []
+    for i in range(N):
+        F.append(d[i])
+    for i in range(0, N - 1):
+        mult = A[i] / B[i]
+        B[i + 1] -= (C[i] * mult)
+        F[i + 1] -= (F[i] * mult)
+    for j in range(0, N):
+        I = N - 1 - j
+        if I == (N - 1):
+            Y[I] = F[I] / B[I]
+        else:
+            Y[I] = (F[I] - C[I] * Y[I + 1]) / B[I]
+    return list(Y)
+
+
+def create_a():
+    matrix = [[0]*n for x in range(n)]
+    matrix[0][0] = 1
+    matrix[last][last] = 1
+    matrix[1][0] = 1 / dx2
+    matrix[last - 1][last] = 1 / dx2
+    for row in range(1, last):
+        for column in range(1, last):
+            if column + 1 == row or column-1 == row:
+                matrix[row][column] = 1 / dx2
+            if column == row:
+                matrix[row][column] = -2 / dx2
+    return matrix
+
+
+def create_x_axis():
+    ret = []
+    for i in range(n):
+        ret.append(i * dx)
+    return ret
+
+
+def create_distributed_loading():
+    ret = []
+    for i in range(n):
+        ret.append(distributed_loading(i * dx))
+    ret[0] = 0
+    ret[-1] = 0
+    return ret
+
+
+def create_ei():
+    ret = []
+    for i in range(n):
+        ret.append(1/ei_f(i * dx))
+    return ret
+
+
+def vector_add(v1, v2, s=1.0):
+    ret = []
+    for i in range(len(v1)):
+        ret.append(s * (v1[i] + v2[i]))
+    return ret
+
+
+def vector_sub(v1, v2, s=1.0):
+    ret = []
+    for i in range(len(v1)):
+        ret.append(s * (v1[i] - v2[i]))
+    return ret
+
+
+def vector_special(v1, v2):
+    ret = []
+    for i in range(2, len(v1)-2):
+        ret.append(v1[i] * math.pow((1 + math.pow((v2[i-1] + v2[i + 1])/(2 * dx), 2)), 3/2))
+    return ret
+
+
+def non_linear(A, M, yc, yo=[], c=1, w=0.5):
+    yc = tri_solver(A, M)
+    M = vector_special(M, yc)
+    if c == 1:
+        return non_linear(A, M, yc, yc, c+1)
+    elif c == repetition:
+    #elif abs(yc[int(len(yc)/2)] -yo[int(len(yc)/2)]) * 100 < 0.01:
+        return [yc, c]
+    else:
+        yn = vector_add(yo, vector_sub(yc, yo, w))
+        return non_linear(A, M, yc, yn, c+1)
+
+
+def actual_deflection(x):
+    c = -wei * (4 * math.pow(x, 3) - 6 * math.pow(x, 2) + 1) / 24
+    return c / math.sqrt(1 - c * c)
+
+
+def create_continuous():
+    ret = []
+    for x in range(n):
+        rx = x / (float(n - 1))
+        ret.append(actual_deflection(rx))
+    return ret
+
+
+def integral(x1, bc=0, dx1=dx):
+    ret = [bc]
+    for i in range(1, n):
+        ret.append((x1[i-1] + x1[i]) * dx1 / 2 + ret[i-1])
+    return ret
+
+
+def max_error(a, b):
+    me = 0
+    if len(a) == len(b):
+        for s in range(len(A)):
+            if abs(a[s] - b[s]) > me:
+                me = abs((a[s] - b[s])/a[s])
+    return me
+
+
+rep = 1
+xa = create_x_axis()
+A = create_a()
+w = create_distributed_loading()
+M = tri_solver(A, w)
+ei = create_ei()
+print(M)
+M = matrix_vector(M, ei)
+d1 = tri_solver(A, M)
+continuous = integral(create_continuous())
+print(M)
+
+
+# """
+for s1 in range(4):
+    for s in range(1, len(M)-1):
+        M[s] *= math.pow(1 + math.pow((d1[s-1] + d1[s+1])/(2 * dx), 2), 3/2)
+    d2 = tri_solver(A, M)
+    d3 = []
+    for s in range(len(d2)):
+        d3.append(d1[s] + 0.5 * (d2[s] - d1[s]))
+    d1 = d2
+    d2 = d3
+
+
+plt.plot(xa, d2, 'r')
+plt.plot(xa, continuous, 'b')
+plt.title("nonlinear, size: " + str(n))
+plt.grid(True)
+plt.show()
+# """
+
